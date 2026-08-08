@@ -23,8 +23,10 @@ import pytest
 from click.testing import CliRunner
 from cwl_utils.parser import Process
 from cwl_utils.parser.cwl_v1_2 import Workflow
+from loguru import logger
 from pydantic import BaseModel, Field
 from transpiler_mate.api import (
+    PluginExecutionError,
     PluginFailureError,
     SoftwareApplication,
     TranspilerContext,
@@ -143,6 +145,34 @@ def test_plugin_command_builds_options_and_receives_root_context() -> None:
     assert options.mode is Mode.FAST
 
 
+def test_plugin_command_logs_successful_execution() -> None:
+    messages: list[str] = []
+
+    def collect_log(message: object) -> None:
+        messages.append(str(message))
+
+    calls: list[tuple[TranspilerContext, ExampleOptions]] = []
+    command = cli.plugin_to_click_command(_recording_plugin(calls))
+    sink_id = logger.add(collect_log, format="{message}")
+
+    try:
+        result = CliRunner().invoke(
+            command,
+            ["--output", "result.json"],
+            obj=_context(),
+        )
+    finally:
+        logger.remove(sink_id)
+
+    logs = "".join(messages)
+
+    assert result.exit_code == 0, result.output
+    assert "Started at:" in logs
+    assert "SUCCESS" in logs
+    assert "Total time:" in logs
+    assert "Finished at:" in logs
+
+
 def test_plugin_command_reports_pydantic_validation_errors() -> None:
     calls: list[tuple[TranspilerContext, ExampleOptions]] = []
     command = cli.plugin_to_click_command(_recording_plugin(calls))
@@ -184,6 +214,46 @@ def test_plugin_command_translates_plugin_error_to_click_error() -> None:
 
     assert result.exit_code == 1
     assert "Error: expected failure" in result.output
+
+
+def test_plugin_execution_error_logs_traceback_and_exits_one() -> None:
+    messages: list[str] = []
+
+    def collect_log(message: object) -> None:
+        messages.append(str(message))
+
+    @transpiler_plugin(
+        name="failing",
+        description="Failing plugin",
+        options_model=ExampleOptions,
+    )
+    def failing_plugin(
+        context: TranspilerContext,
+        options: ExampleOptions,
+    ) -> None:
+        del context, options
+        raise PluginExecutionError("unexpected technical failure")
+
+    command = cli.plugin_to_click_command(failing_plugin)
+    sink_id = logger.add(collect_log, format="{message}")
+
+    try:
+        result = CliRunner().invoke(
+            command,
+            ["--output", "result.json"],
+            obj=_context(),
+        )
+    finally:
+        logger.remove(sink_id)
+
+    logs = "".join(messages)
+
+    assert result.exit_code == 1
+    assert "FAIL" in logs
+    assert "Traceback (most recent call last)" in logs
+    assert "PluginExecutionError: unexpected technical failure" in logs
+    assert "Total time:" in logs
+    assert "Finished at:" in logs
 
 
 def _install_runtime_plugin(

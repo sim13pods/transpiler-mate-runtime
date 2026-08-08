@@ -26,8 +26,10 @@ themselves.
 from __future__ import annotations
 
 import json
+import time
 import types
 from collections.abc import Sequence
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Literal, Union, get_args, get_origin
@@ -43,8 +45,11 @@ from requests.adapters import HTTPAdapter
 from session_adapters.bearer_auth_http_adapter import BearerAuthHTTPAdapter
 from session_adapters.file_adapter import FileAdapter
 from session_adapters.oci_adapter import OCIAdapter
-
-from transpiler_mate.api import PluginError, TranspilerContext
+from transpiler_mate.api import (
+    PluginError,
+    PluginExecutionError,
+    TranspilerContext,
+)
 
 from .plugin_loader import (
     PluginLoaderError,
@@ -58,8 +63,11 @@ if TYPE_CHECKING:
 
     from click.core import Parameter
     from requests.adapters import BaseAdapter
-
     from transpiler_mate.api import SoftwareApplication, TranspilerPlugin
+
+_EXECUTION_SEPARATOR = (
+    "------------------------------------------------------------------------"
+)
 
 
 class PydanticParamType(click.ParamType[Any]):
@@ -290,10 +298,37 @@ def plugin_to_click_command(
                 ctx=ctx,
             ) from exc
 
+        start_time = time.time()
+        logger.info(
+            "Started at: {}",
+            datetime.fromtimestamp(start_time).isoformat(timespec="milliseconds"),
+        )
+
         try:
             plugin.execute(context, options)
+        except PluginExecutionError as exc:
+            logger.error(_EXECUTION_SEPARATOR)
+            logger.error("FAIL")
+            logger.exception(
+                "Plugin '{}' execution failed: {}",
+                plugin.name,
+                exc,
+            )
+            logger.error(_EXECUTION_SEPARATOR)
+            ctx.exit(1)
         except PluginError as exc:
             raise click.ClickException(str(exc)) from exc
+        else:
+            logger.success(_EXECUTION_SEPARATOR)
+            logger.success("SUCCESS")
+            logger.success(_EXECUTION_SEPARATOR)
+        finally:
+            end_time = time.time()
+            logger.info("Total time: {:.4f} seconds", end_time - start_time)
+            logger.info(
+                "Finished at: {}",
+                datetime.fromtimestamp(end_time).isoformat(timespec="milliseconds"),
+            )
 
     return click.Command(
         name=plugin.name,
