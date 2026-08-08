@@ -48,6 +48,7 @@ from session_adapters.oci_adapter import OCIAdapter
 from transpiler_mate.api import (
     PluginError,
     PluginExecutionError,
+    PluginFailureError,
     TranspilerContext,
 )
 
@@ -310,11 +311,21 @@ def plugin_to_click_command(
 
         try:
             plugin.execute(context, options)
+        except PluginFailureError as exc:
+            logger.error(_EXECUTION_SEPARATOR)
+            logger.error("FAILURE")
+            logger.error(
+                "Plugin '{}' failed to produce expected results: {}",
+                plugin.name,
+                exc,
+            )
+            logger.error(_EXECUTION_SEPARATOR)
+            ctx.exit(1)
         except PluginExecutionError as exc:
             logger.error(_EXECUTION_SEPARATOR)
-            logger.error("FAIL")
+            logger.error("ERROR")
             logger.exception(
-                "Plugin '{}' execution failed: {}",
+                "Plugin '{}' execution failed unexpectedly: {}",
                 plugin.name,
                 exc,
             )

@@ -190,7 +190,12 @@ def test_plugin_command_reports_pydantic_validation_errors() -> None:
     assert calls == []
 
 
-def test_plugin_command_translates_plugin_error_to_click_error() -> None:
+def test_plugin_failure_error_logs_failure_and_exits_one() -> None:
+    messages: list[str] = []
+
+    def collect_log(message: object) -> None:
+        messages.append(str(message))
+
     @transpiler_plugin(
         name="failing",
         description="Failing plugin",
@@ -204,16 +209,27 @@ def test_plugin_command_translates_plugin_error_to_click_error() -> None:
         raise PluginFailureError("expected failure")
 
     command = cli.plugin_to_click_command(failing_plugin)
-    runner = CliRunner()
+    sink_id = logger.add(collect_log, format="{message}")
 
-    result = runner.invoke(
-        command,
-        ["--output", "result.json"],
-        obj=_context(),
-    )
+    try:
+        result = CliRunner().invoke(
+            command,
+            ["--output", "result.json"],
+            obj=_context(),
+        )
+    finally:
+        logger.remove(sink_id)
+
+    logs = "".join(messages)
 
     assert result.exit_code == 1
-    assert "Error: expected failure" in result.output
+    assert "FAILURE" in logs
+    assert (
+        "Plugin 'failing' failed to produce expected results: expected failure" in logs
+    )
+    assert "Traceback (most recent call last)" not in logs
+    assert "Total time:" in logs
+    assert "Finished at:" in logs
 
 
 def test_plugin_execution_error_logs_traceback_and_exits_one() -> None:
@@ -249,7 +265,8 @@ def test_plugin_execution_error_logs_traceback_and_exits_one() -> None:
     logs = "".join(messages)
 
     assert result.exit_code == 1
-    assert "FAIL" in logs
+    assert "ERROR" in logs
+    assert "Plugin 'failing' execution failed unexpectedly" in logs
     assert "Traceback (most recent call last)" in logs
     assert "PluginExecutionError: unexpected technical failure" in logs
     assert "Total time:" in logs
