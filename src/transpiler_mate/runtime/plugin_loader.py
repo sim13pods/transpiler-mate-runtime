@@ -53,9 +53,7 @@ class DuplicatePluginError(PluginLoaderError):
         self.entries = entries
 
         definitions = ", ".join(entry.value for entry in entries)
-        super().__init__(
-            f"Multiple plugins are registered as {name!r}: {definitions}"
-        )
+        super().__init__(f"Multiple plugins are registered as {name!r}: {definitions}")
 
 
 class PluginNotFoundError(PluginLoaderError):
@@ -65,8 +63,7 @@ class PluginNotFoundError(PluginLoaderError):
         self.name = name
         self.group = group
         super().__init__(
-            f"No plugin named {name!r} is registered in entry-point group "
-            f"{group!r}"
+            f"No plugin named {name!r} is registered in entry-point group {group!r}"
         )
 
 
@@ -76,8 +73,7 @@ class PluginLoadError(PluginLoaderError):
     def __init__(self, entry_point: EntryPoint) -> None:
         self.entry_point = entry_point
         super().__init__(
-            f"Unable to load plugin {entry_point.name!r} from "
-            f"{entry_point.value!r}"
+            f"Unable to load plugin {entry_point.name!r} from {entry_point.value!r}"
         )
 
 

@@ -28,29 +28,36 @@ from __future__ import annotations
 import json
 import types
 from collections.abc import Sequence
-from cwl_loader import load_cwl_from_location
-from cwl_utils.parser import Process
 from enum import Enum
 from importlib.metadata import EntryPoint
-from loguru import logger
-from requests import Session
-from requests.adapters import BaseAdapter, HTTPAdapter
 from pathlib import Path
-from session_adapters.bearer_auth_http_adapter import BearerAuthHTTPAdapter
-from session_adapters.file_adapter import FileAdapter
-from session_adapters.oci_adapter import OCIAdapter
 from typing import Annotated, Any, Literal, Union, get_args, get_origin
 
 import click
 from click.core import Parameter, ParameterSource
-from pydantic import TypeAdapter, ValidationError
+from cwl_loader import _is_url, load_cwl_from_location
+from cwl_utils.parser import Process
+from loguru import logger
+from pydantic import AnyUrl, TypeAdapter, ValidationError
+from requests import Session
+from requests.adapters import BaseAdapter, HTTPAdapter
+from session_adapters.bearer_auth_http_adapter import BearerAuthHTTPAdapter
+from session_adapters.file_adapter import FileAdapter
+from session_adapters.oci_adapter import OCIAdapter
 
-from transpiler_mate.api import PluginError, TranspilerContext, TranspilerPlugin
+from transpiler_mate.api import (
+    PluginError,
+    SoftwareApplication,
+    TranspilerContext,
+    TranspilerPlugin,
+)
+
 from .plugin_loader import (
     PluginLoaderError,
     discover_plugins,
     load_plugin,
 )
+from .software_application_extractor import software_application_from_process
 
 
 class PydanticParamType(click.ParamType):
@@ -239,7 +246,7 @@ def plugin_to_click_command(
     """Translate one loaded plugin into a Click command."""
 
     options_model = plugin.options_model
-    params: list[Parameter]  = [
+    params: list[Parameter] = [
         field_to_click_option(field_name, field)
         for field_name, field in options_model.model_fields.items()
     ]
@@ -464,7 +471,6 @@ def main(
     oci_password: str | None,
     oauth2_bearer: str | None,
 ) -> None:
-    ctx.ensure_object(dict)
 
     session = Session()
 
@@ -486,7 +492,25 @@ def main(
         OCIAdapter(hostname=oci_hostname, username=oci_username, password=oci_password),
     )
 
-    cwl_document: Process | list[Process] = load_cwl_from_location(
-        path=source,
-        session=session
+    content_path: Path | AnyUrl = (
+        AnyUrl(source)
+        if _is_url(path_or_url=source, session=session)
+        else Path(source).absolute()
     )
+
+    cwl_document: Process | list[Process] = load_cwl_from_location(
+        path=source, session=session
+    )
+
+    metadata: SoftwareApplication = software_application_from_process(cwl_document)
+
+    transpiler_context: TranspilerContext = TranspilerContext(
+        source=content_path,
+        metadata=metadata,
+        document=cwl_document
+        if isinstance(cwl_document, Process)
+        else tuple(cwl_document),
+    )
+
+    ctx.ensure_object(dict)
+    ctx.obj["TranspilerContext"] = transpiler_context

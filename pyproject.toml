@@ -29,7 +29,8 @@ dependencies = [
   "cwl-utils>=0.42",
   "loguru==0.7.3",
   "pydantic>=2.13.4,<3",
-  "session-adapters>=0.5.0",
+  "PyLD>=3.1.0",
+ "session-adapters>=0.5.0",
   "transpiler-mate-api @ git+https://github.com/sim13pods/transpiler-mate-api.git@main",
 ]
 
@@ -53,6 +54,20 @@ path = "src/transpiler_mate/runtime/__about__.py"
 
 [tool.hatch.build.targets.sdist]
 include = ["src/transpiler_mate", "tests", "examples", "docs", "README.md", "mkdocs.yml", "pyproject.toml"]
+
+[tool.mypy]
+strict = true
+
+[[tool.mypy.overrides]]
+module = [
+    "cwl_loader",
+    "cwl_loader.*",
+    "session_adapters",
+    "session_adapters.*",
+    "transpiler_mate",
+    "transpiler_mate.api"
+]
+ignore_missing_imports = true
 
 [tool.coverage.paths]
 transpiler_mate = ["src/transpiler_mate", "*/transpiler-mate-runtime/src/transpiler_mate"]
