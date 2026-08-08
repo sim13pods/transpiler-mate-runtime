@@ -257,6 +257,10 @@ class PluginGroup(click.Group):
             return result
 
 
+def time_to_string(time: float) -> str:
+    return datetime.fromtimestamp(time).isoformat(timespec="milliseconds")
+
+
 def plugin_to_click_command(
     plugin: TranspilerPlugin[Any],
 ) -> click.Command:
@@ -301,7 +305,7 @@ def plugin_to_click_command(
         start_time = time.time()
         logger.info(
             "Started at: {}",
-            datetime.fromtimestamp(start_time).isoformat(timespec="milliseconds"),
+            time_to_string(start_time),
         )
 
         try:
@@ -327,7 +331,7 @@ def plugin_to_click_command(
             logger.info("Total time: {:.4f} seconds", end_time - start_time)
             logger.info(
                 "Finished at: {}",
-                datetime.fromtimestamp(end_time).isoformat(timespec="milliseconds"),
+                time_to_string(end_time),
             )
 
     return click.Command(
