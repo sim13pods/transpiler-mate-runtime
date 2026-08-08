@@ -105,7 +105,7 @@ def test_plugin_command_maps_pydantic_fields_to_click_options() -> None:
     assert "--retries INTEGER" in help_result.output
     assert "--verbose / --no-verbose" in help_result.output
     assert "--tags TEXT" in help_result.output
-    assert "[FAST|SAFE]" in help_result.output
+    assert "[fast|safe]" in help_result.output
 
 
 def test_plugin_command_builds_options_and_receives_root_context() -> None:
