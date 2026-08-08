@@ -46,6 +46,9 @@ Source = "https://github.com/Terradue/transpiler-mate-runtime"
 [project.scripts]
 transpiler-mate = "transpiler_mate.runtime.cli:main"
 
+[project.entry-points."transpiler_mate.plugins"]
+bundle = "transpiler_mate.runtime.plugins.bundle:bundle"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/transpiler_mate"]
 
@@ -57,6 +60,9 @@ include = ["src/transpiler_mate", "tests", "examples", "docs", "README.md", "mkd
 
 [tool.mypy]
 strict = true
+namespace_packages = true
+explicit_package_bases = true
+mypy_path = "$MYPY_CONFIG_FILE_DIR/src"
 
 [[tool.mypy.overrides]]
 module = [
@@ -84,7 +90,7 @@ exclude_lines = [
 
 [tool.hatch.envs.test]
 skip-install = false
-dev-mode = false
+dev-mode = true
 dependencies = [
   "pytest>=8.4,<10",
   "pytest-cov>=6.2,<8",
