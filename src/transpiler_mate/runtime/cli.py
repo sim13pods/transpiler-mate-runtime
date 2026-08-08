@@ -563,12 +563,10 @@ def main(
 
     metadata: SoftwareApplication = software_application_from_process(cwl_document)
 
-    transpiler_context: TranspilerContext = TranspilerContext(
+    ctx.obj = TranspilerContext(
         source=content_path,
         metadata=metadata,
         document=cwl_document
         if isinstance(cwl_document, Process)
         else tuple(cwl_document),
     )
-
-    ctx.obj = transpiler_context
