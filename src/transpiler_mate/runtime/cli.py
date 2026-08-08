@@ -45,7 +45,6 @@ from requests.adapters import HTTPAdapter
 from session_adapters.bearer_auth_http_adapter import BearerAuthHTTPAdapter
 from session_adapters.file_adapter import FileAdapter
 from session_adapters.oci_adapter import OCIAdapter
-
 from transpiler_mate.api import (
     PluginError,
     PluginExecutionError,
@@ -65,7 +64,6 @@ if TYPE_CHECKING:
 
     from click.core import Parameter
     from requests.adapters import BaseAdapter
-
     from transpiler_mate.api import SoftwareApplication, TranspilerPlugin
 
 _EXECUTION_SEPARATOR = (

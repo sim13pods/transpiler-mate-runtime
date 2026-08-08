@@ -21,7 +21,6 @@ from typing import TYPE_CHECKING
 
 from cwl_loader import dump_cwl
 from pydantic import BaseModel, ConfigDict, Field
-
 from transpiler_mate.api import PluginExecutionError, transpiler_plugin
 
 if TYPE_CHECKING:
