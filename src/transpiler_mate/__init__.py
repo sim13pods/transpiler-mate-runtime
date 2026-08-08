@@ -12,8 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from transpiler_mate.runtime import __about__
-
-
-def test_version_is_defined() -> None:
-    assert __about__.__version__ == "1.0.0"
+"""Plugin discovery, context creation, and framework-neutral execution."""

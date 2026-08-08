@@ -47,13 +47,13 @@ Source = "https://github.com/Terradue/transpiler-mate-runtime"
 transpiler-mate = "transpiler_mate.runtime.cli:main"
 
 [project.entry-points."transpiler_mate.plugins"]
-bundle = "transpiler_mate.runtime.plugins.bundle:bundle"
+bundle = "transpiler_mate.plugins.bundle:bundle"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/transpiler_mate"]
 
 [tool.hatch.version]
-path = "src/transpiler_mate/runtime/__about__.py"
+path = "src/transpiler_mate/__about__.py"
 
 [tool.hatch.build.targets.sdist]
 include = ["src/transpiler_mate", "tests", "examples", "docs", "README.md", "mkdocs.yml", "pyproject.toml"]

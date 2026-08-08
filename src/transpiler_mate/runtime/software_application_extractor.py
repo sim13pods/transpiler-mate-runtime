@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING
 
 from cwl_loader import _preserved_document_metadata
 from pyld import jsonld
+
 from transpiler_mate.api import SoftwareApplication
 
 if TYPE_CHECKING:

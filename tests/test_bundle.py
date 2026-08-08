@@ -26,7 +26,7 @@ from transpiler_mate.api import (
     TranspilerContext,
 )
 
-from transpiler_mate.runtime.plugins.bundle import BundleOption, bundle
+from transpiler_mate.plugins.bundle import BundleOption, bundle
 
 
 def _context(document: Process | tuple[Process, ...]) -> TranspilerContext:
@@ -56,7 +56,7 @@ def test_bundle_serializes_single_process(
         stream.write("cwlVersion: v1.2\n")
 
     monkeypatch.setattr(
-        "transpiler_mate.runtime.plugins.bundle.dump_cwl",
+        "transpiler_mate.plugins.bundle.dump_cwl",
         dump,
     )
 
@@ -82,7 +82,7 @@ def test_bundle_converts_process_tuple_to_dump_cwl_list(
         stream.write("$graph: []\n")
 
     monkeypatch.setattr(
-        "transpiler_mate.runtime.plugins.bundle.dump_cwl",
+        "transpiler_mate.plugins.bundle.dump_cwl",
         dump,
     )
 
@@ -103,7 +103,7 @@ def test_bundle_reports_serialization_failure(
         raise RuntimeError("serialization failed")
 
     monkeypatch.setattr(
-        "transpiler_mate.runtime.plugins.bundle.dump_cwl",
+        "transpiler_mate.plugins.bundle.dump_cwl",
         dump,
     )
 
