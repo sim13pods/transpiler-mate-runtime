@@ -191,7 +191,7 @@ def _install_runtime_plugin(
     plugin: TranspilerPlugin[ExampleOptions],
 ) -> None:
     entry_point = _entry_point()
-    group = cast("cli.PluginGroup", cli.main)
+    group = cli.main
     group._entry_points = None
     group._plugin_commands.clear()
 

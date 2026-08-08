@@ -82,9 +82,12 @@ def test_preserved_metadata_is_compacted_and_validated(
         "_preserved_document_metadata",
         preserved_metadata,
     )
-    monkeypatch.setattr(extractor.jsonld, "compact", compact)
     monkeypatch.setattr(
-        extractor.SoftwareApplication,
+        "transpiler_mate.runtime.software_application_extractor.jsonld.compact",
+        compact,
+    )
+    monkeypatch.setattr(
+        SoftwareApplication,
         "model_validate",
         validate,
     )
