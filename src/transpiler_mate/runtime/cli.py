@@ -46,7 +46,7 @@ from click.core import Parameter, ParameterSource
 from pydantic import TypeAdapter, ValidationError
 
 from transpiler_mate.api import PluginError, TranspilerContext, TranspilerPlugin
-from plugin_loader import (
+from .plugin_loader import (
     PluginLoaderError,
     discover_plugins,
     load_plugin,
