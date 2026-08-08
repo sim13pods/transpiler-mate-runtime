@@ -64,6 +64,8 @@ module = [
     "cwl_loader.*",
     "session_adapters",
     "session_adapters.*",
+    "pyld",
+    "pyld.*",
     "transpiler_mate",
     "transpiler_mate.api"
 ]

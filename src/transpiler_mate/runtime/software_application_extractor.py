@@ -31,13 +31,17 @@ The conversion follows the JSON-LD strategy historically used by
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any
+from typing import TYPE_CHECKING
 
 from cwl_loader import _preserved_document_metadata
-from cwl_utils.parser import Process
 from pyld import jsonld
 
 from transpiler_mate.api import SoftwareApplication
+
+if TYPE_CHECKING:
+    from typing import Any
+
+    from cwl_utils.parser import Process
 
 _NAMESPACES_KEY = "$namespaces"
 

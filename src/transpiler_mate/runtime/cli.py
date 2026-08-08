@@ -29,28 +29,22 @@ import json
 import types
 from collections.abc import Sequence
 from enum import Enum
-from importlib.metadata import EntryPoint
 from pathlib import Path
-from typing import Annotated, Any, Literal, Union, get_args, get_origin
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Union, get_args, get_origin
 
 import click
-from click.core import Parameter, ParameterSource
+from click.core import ParameterSource
 from cwl_loader import _is_url, load_cwl_from_location
 from cwl_utils.parser import Process
 from loguru import logger
 from pydantic import AnyUrl, TypeAdapter, ValidationError
 from requests import Session
-from requests.adapters import BaseAdapter, HTTPAdapter
+from requests.adapters import HTTPAdapter
 from session_adapters.bearer_auth_http_adapter import BearerAuthHTTPAdapter
 from session_adapters.file_adapter import FileAdapter
 from session_adapters.oci_adapter import OCIAdapter
 
-from transpiler_mate.api import (
-    PluginError,
-    SoftwareApplication,
-    TranspilerContext,
-    TranspilerPlugin,
-)
+from transpiler_mate.api import PluginError, TranspilerContext
 
 from .plugin_loader import (
     PluginLoaderError,
@@ -59,8 +53,16 @@ from .plugin_loader import (
 )
 from .software_application_extractor import software_application_from_process
 
+if TYPE_CHECKING:
+    from importlib.metadata import EntryPoint
 
-class PydanticParamType(click.ParamType):
+    from click.core import Parameter
+    from requests.adapters import BaseAdapter
+
+    from transpiler_mate.api import SoftwareApplication, TranspilerPlugin
+
+
+class PydanticParamType(click.ParamType[Any]):
     """Click parameter type backed by a Pydantic ``TypeAdapter``."""
 
     def __init__(self, annotation: Any) -> None:
@@ -92,7 +94,7 @@ class PydanticParamType(click.ParamType):
                 self.fail(str(exc), param, ctx)
 
 
-class LiteralParamType(click.Choice):
+class LiteralParamType(click.Choice[Any]):
     """Choice type that preserves the original Literal value type."""
 
     def __init__(self, values: tuple[Any, ...]) -> None:
@@ -117,7 +119,7 @@ class LiteralParamType(click.Choice):
         return self.values[self.choices.index(label)]
 
 
-class EnumParamType(click.Choice):
+class EnumParamType(click.Choice[Any]):
     """Choice type that exposes enum member names and returns enum values."""
 
     def __init__(self, enum_type: type[Enum]) -> None:
@@ -211,16 +213,23 @@ class PluginGroup(click.Group):
         if self.chain:
             raise RuntimeError("PluginGroup does not support chained commands")
 
-        if not ctx.protected_args:
+        protected_args: list[str] | None = getattr(ctx, "_protected_args", None)
+        if protected_args is None:
+            protected_args = ctx.protected_args
+
+        args = [*protected_args, *ctx.args]
+        if not args:
             return super().invoke(ctx)
 
-        args = [*ctx.protected_args, *ctx.args]
         ctx.args = []
-        ctx.protected_args = []
+        protected_args.clear()
 
         with ctx:
             cmd_name, command, args = self.resolve_command(ctx, args)
-            assert command is not None
+            if command is None:
+                raise click.ClickException(
+                    f"Unable to resolve plugin command {cmd_name!r}"
+                )
             ctx.invoked_subcommand = cmd_name
 
             # Parsing the child context first is intentional. An eager
@@ -252,7 +261,7 @@ def plugin_to_click_command(
     ]
 
     @click.pass_context
-    def invoke_plugin(ctx: click.Context, **values: Any) -> None:
+    def invoke_plugin(ctx: click.Context, /, **values: Any) -> None:
         context = ctx.find_root().obj
         if not isinstance(context, TranspilerContext):
             raise click.ClickException(
@@ -329,7 +338,7 @@ def field_to_click_option(
 
 def _click_type_and_cardinality(
     annotation: Any,
-) -> tuple[click.ParamType | type[Any], bool]:
+) -> tuple[click.ParamType[Any] | type[Any], bool]:
     origin = get_origin(annotation)
     args = get_args(annotation)
 
@@ -347,7 +356,7 @@ def _click_type_and_cardinality(
     return _click_type(annotation), False
 
 
-def _click_type(annotation: Any) -> click.ParamType | type[Any]:
+def _click_type(annotation: Any) -> click.ParamType[Any] | type[Any]:
     annotation = _strip_optional(_unwrap_annotated(annotation))
     origin = get_origin(annotation)
 
@@ -512,5 +521,4 @@ def main(
         else tuple(cwl_document),
     )
 
-    ctx.ensure_object(dict)
-    ctx.obj["TranspilerContext"] = transpiler_context
+    ctx.obj = transpiler_context

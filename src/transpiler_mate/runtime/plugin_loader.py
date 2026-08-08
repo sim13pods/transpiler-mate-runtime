@@ -33,10 +33,14 @@ invoked on its entry point.
 
 from __future__ import annotations
 
-from importlib.metadata import EntryPoint, entry_points
-from typing import Any, Final
+from importlib.metadata import entry_points
+from typing import TYPE_CHECKING
 
 from transpiler_mate.api import TranspilerPlugin
+
+if TYPE_CHECKING:
+    from importlib.metadata import EntryPoint
+    from typing import Any, Final
 
 PLUGIN_ENTRY_POINT_GROUP: Final = "transpiler_mate.plugins"
 
