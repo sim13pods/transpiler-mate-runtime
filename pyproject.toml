@@ -84,6 +84,7 @@ exclude_lines = [
 
 [tool.hatch.envs.test]
 skip-install = false
+dev-mode = false
 dependencies = [
   "pytest>=8.4,<10",
   "pytest-cov>=6.2,<8",
