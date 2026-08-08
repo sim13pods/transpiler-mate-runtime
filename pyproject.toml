@@ -30,8 +30,12 @@ dependencies = [
   "loguru==0.7.3",
   "pydantic>=2.13.4,<3",
   "session-adapters>=0.5.0",
-  "transpiler-mate-api>=1.0.0,<2",
+  "transpiler-mate-api @ git+https://github.com/sim13pods/transpiler-mate-api.git@main",
 ]
+
+# TODO remove me as soon as transpiler-mate-api is on PyPI
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [project.urls]
 Documentation = "https://terradue.github.io/transpiler-mate-runtime/"
