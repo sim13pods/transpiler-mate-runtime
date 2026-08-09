@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from cwl_loader import dump_cwl
+from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 from transpiler_mate.api import PluginExecutionError, transpiler_plugin
 
@@ -49,13 +50,19 @@ def bundle(context: TranspilerContext, options: BundleOption) -> None:
         else context.document
     )
 
+    logger.info(f"Serializing bundled CWL document to {options.output.absolute()}...")
+
     try:
         options.output.parent.mkdir(parents=True, exist_ok=True)
         with options.output.open("w", encoding="utf-8") as output_stream:
             dump_cwl(document, output_stream)
+
+        logger.success(
+            f"Bundled CWL document successfully serialized to {options.output.absolute()}!"
+        )
     except Exception as exc:
         raise PluginExecutionError(
-            f"Unable to bundle the resolved CWL document to {options.output}"
+            f"Unable to serialize the bundled CWL document to {options.output.absolute()}"
         ) from exc
 
 

@@ -109,6 +109,6 @@ def test_bundle_reports_serialization_failure(
 
     with pytest.raises(
         PluginExecutionError,
-        match="Unable to bundle the resolved CWL document",
+        match="Unable to serialize the bundled CWL document to",
     ):
         bundle.execute(_context(process), BundleOption(output=output))
