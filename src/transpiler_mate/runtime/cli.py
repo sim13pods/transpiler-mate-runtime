@@ -516,7 +516,7 @@ def _format_validation_error(exc: ValidationError) -> str:
 
 
 @click.group(cls=PluginGroup, name="transpiler-mate")
-@click.version_option()
+@click.version_option(package_name="transpiler-mate-runtime")
 @click.argument("source", type=click.STRING, required=True)
 @click.option("--oci-hostname", envvar="OCI_HOSTNAME", show_envvar=True)
 @click.option("--oci-username", envvar="OCI_USERNAME", show_envvar=True)
