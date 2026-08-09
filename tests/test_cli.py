@@ -66,16 +66,52 @@ class FakeSession:
         self.mounts.append((scheme, adapter))
 
 
+@pytest.fixture(autouse=True)
+def _runtime_context_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
+    process = Workflow(inputs=[], outputs=[], steps=[])
+    metadata = SoftwareApplication.model_construct()
+
+    def adapter() -> object:
+        return object()
+
+    def oci_adapter(
+        *,
+        hostname: str | None,
+        username: str | None,
+        password: str | None,
+    ) -> object:
+        del hostname, username, password
+        return object()
+
+    def is_url(*, path_or_url: str, session: object) -> bool:
+        del path_or_url, session
+        return False
+
+    def load_document(*, path: str, session: object) -> Process:
+        del path, session
+        return process
+
+    def extract_metadata(
+        document: Process | list[Process],
+    ) -> SoftwareApplication:
+        del document
+        return metadata
+
+    monkeypatch.setattr(cli, "Session", FakeSession)
+    monkeypatch.setattr(cli, "HTTPAdapter", adapter)
+    monkeypatch.setattr(cli, "FileAdapter", adapter)
+    monkeypatch.setattr(cli, "OCIAdapter", oci_adapter)
+    monkeypatch.setattr(cli, "_is_url", is_url)
+    monkeypatch.setattr(cli, "load_cwl_from_location", load_document)
+    monkeypatch.setattr(
+        cli,
+        "software_application_from_process",
+        extract_metadata,
+    )
+
+
 def _entry_point(name: str = "demo") -> EntryPoint:
     return cast("EntryPoint", FakeEntryPoint(name))
-
-
-def _context() -> TranspilerContext:
-    return TranspilerContext.model_construct(
-        source=Path("workflow.cwl"),
-        metadata=SoftwareApplication.model_construct(),
-        document=cast("Process", object()),
-    )
 
 
 def _recording_plugin(
@@ -100,9 +136,14 @@ def test_plugin_command_maps_pydantic_fields_to_click_options() -> None:
     command = cli.plugin_to_click_command(_recording_plugin(calls))
     runner = CliRunner()
 
-    help_result = runner.invoke(command, ["--help"], obj=_context())
+    help_result = runner.invoke(command, ["--help"])
 
     assert help_result.exit_code == 0
+    assert "Usage: demo [OPTIONS] SOURCE" in help_result.output
+    assert "--oci-hostname TEXT" in help_result.output
+    assert "--oci-username TEXT" in help_result.output
+    assert "--oci-password TEXT" in help_result.output
+    assert "--oauth2-bearer TEXT" in help_result.output
     assert "--output PATH" in help_result.output
     assert "--retries INTEGER" in help_result.output
     assert "--verbose / --no-verbose" in help_result.output
@@ -110,10 +151,9 @@ def test_plugin_command_maps_pydantic_fields_to_click_options() -> None:
     assert "[fast|safe]" in help_result.output
 
 
-def test_plugin_command_builds_options_and_receives_root_context() -> None:
+def test_plugin_command_builds_options_and_context() -> None:
     calls: list[tuple[TranspilerContext, ExampleOptions]] = []
     command = cli.plugin_to_click_command(_recording_plugin(calls))
-    context = _context()
     runner = CliRunner()
 
     result = runner.invoke(
@@ -130,14 +170,14 @@ def test_plugin_command_builds_options_and_receives_root_context() -> None:
             "beta",
             "--mode",
             "fast",
+            "workflow.cwl",
         ],
-        obj=context,
     )
 
     assert result.exit_code == 0, result.output
     assert len(calls) == 1
     received_context, options = calls[0]
-    assert received_context is context
+    assert received_context.source == Path("workflow.cwl").absolute()
     assert options.output == Path("result.json")
     assert options.retries == 3
     assert options.verbose is True
@@ -158,8 +198,7 @@ def test_plugin_command_logs_successful_execution() -> None:
     try:
         result = CliRunner().invoke(
             command,
-            ["--output", "result.json"],
-            obj=_context(),
+            ["--output", "result.json", "workflow.cwl"],
         )
     finally:
         logger.remove(sink_id)
@@ -180,8 +219,7 @@ def test_plugin_command_reports_pydantic_validation_errors() -> None:
 
     result = runner.invoke(
         command,
-        ["--output", "result.json", "--retries", "-1"],
-        obj=_context(),
+        ["--output", "result.json", "--retries", "-1", "workflow.cwl"],
     )
 
     assert result.exit_code == 2
@@ -214,8 +252,7 @@ def test_plugin_failure_error_logs_failure_and_exits_one() -> None:
     try:
         result = CliRunner().invoke(
             command,
-            ["--output", "result.json"],
-            obj=_context(),
+            ["--output", "result.json", "workflow.cwl"],
         )
     finally:
         logger.remove(sink_id)
@@ -256,8 +293,7 @@ def test_plugin_execution_error_logs_traceback_and_exits_one() -> None:
     try:
         result = CliRunner().invoke(
             command,
-            ["--output", "result.json"],
-            obj=_context(),
+            ["--output", "result.json", "workflow.cwl"],
         )
     finally:
         logger.remove(sink_id)
@@ -293,6 +329,22 @@ def _install_runtime_plugin(
     monkeypatch.setattr(cli, "load_plugin", load_plugin)
 
 
+def test_root_help_only_exposes_global_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[TranspilerContext, ExampleOptions]] = []
+    _install_runtime_plugin(monkeypatch, _recording_plugin(calls))
+
+    result = CliRunner().invoke(cli.main, ["--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "Usage: transpiler-mate [OPTIONS] COMMAND [ARGS]..." in result.output
+    assert "--version" in result.output
+    assert "--oci-hostname" not in result.output
+    assert "--oauth2-bearer" not in result.output
+    assert calls == []
+
+
 def test_plugin_help_does_not_initialize_transpiler_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -300,21 +352,23 @@ def test_plugin_help_does_not_initialize_transpiler_context(
     _install_runtime_plugin(monkeypatch, _recording_plugin(calls))
 
     def unexpected_session() -> None:
-        raise AssertionError("root callback must not execute for plugin help")
+        raise AssertionError("plugin callback must not execute for plugin help")
 
     monkeypatch.setattr(cli, "Session", unexpected_session)
 
     result = CliRunner().invoke(
         cli.main,
-        ["workflow.cwl", "demo", "--help"],
+        ["demo", "--help"],
     )
 
     assert result.exit_code == 0, result.output
+    assert "Usage: transpiler-mate demo [OPTIONS] SOURCE" in result.output
     assert "Demo plugin" in result.output
+    assert "--oci-hostname TEXT" in result.output
     assert calls == []
 
 
-def test_main_builds_context_and_passes_it_to_plugin(
+def test_plugin_builds_context_and_passes_it_to_plugin(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[tuple[TranspilerContext, ExampleOptions]] = []
@@ -362,7 +416,7 @@ def test_main_builds_context_and_passes_it_to_plugin(
 
     result = CliRunner().invoke(
         cli.main,
-        ["workflow.cwl", "demo", "--output", "result.json"],
+        ["demo", "--output", "result.json", "workflow.cwl"],
     )
 
     assert result.exit_code == 0, result.output

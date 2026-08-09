@@ -18,9 +18,8 @@ Each plugin is discovered through Python entry points and translated into a
 Click command. The plugin's Pydantic ``options_model`` defines the command
 options.
 
-The top-level command owns construction of ``TranspilerContext``. Plugin
-commands receive that already-created context and never construct it
-themselves.
+Each plugin command owns runtime input/session setup and constructs its
+``TranspilerContext`` immediately before executing the plugin.
 """
 
 from __future__ import annotations
@@ -207,60 +206,40 @@ class PluginGroup(click.Group):
         self._plugin_commands[cmd_name] = command
         return command
 
-    def invoke(self, ctx: click.Context) -> Any:
-        """Invoke the root command before a real plugin execution.
-
-        Click normally invokes a group callback before parsing the selected
-        subcommand. For transpiler-mate that would unnecessarily construct the
-        TranspilerContext for ``plugin --help`` or for invalid plugin options.
-
-        This group parses the selected plugin command first. If parsing exits
-        for help or fails validation, the root callback is never invoked.
-        Otherwise the root callback creates the TranspilerContext and only then
-        is the plugin command invoked.
-        """
-
-        if self.chain:
-            raise RuntimeError("PluginGroup does not support chained commands")
-
-        protected_args: list[str] | None = getattr(ctx, "_protected_args", None)
-        if protected_args is None:
-            protected_args = ctx.protected_args
-
-        args = [*protected_args, *ctx.args]
-        if not args:
-            return super().invoke(ctx)
-
-        ctx.args = []
-        protected_args.clear()
-
-        with ctx:
-            cmd_name, command, args = self.resolve_command(ctx, args)
-            if command is None:
-                raise click.ClickException(
-                    f"Unable to resolve plugin command {cmd_name!r}"
-                )
-            ctx.invoked_subcommand = cmd_name
-
-            # Parsing the child context first is intentional. An eager
-            # ``--help`` exits here before create_transpiler_context() runs.
-            sub_ctx = command.make_context(cmd_name, args, parent=ctx)
-
-            # Invoke only the root callback: it owns TranspilerContext
-            # construction and stores the result in the root context object.
-            click.Command.invoke(self, ctx)
-
-            with sub_ctx:
-                result = sub_ctx.command.invoke(sub_ctx)
-
-            if self._result_callback is not None:
-                return ctx.invoke(self._result_callback, result, **ctx.params)
-
-            return result
-
 
 def time_to_string(time: float) -> str:
     return datetime.fromtimestamp(time).isoformat(timespec="milliseconds")
+
+
+def _runtime_click_parameters() -> list[Parameter]:
+    return [
+        click.Argument(
+            ["_runtime_source"],
+            metavar="SOURCE",
+            type=click.STRING,
+            required=True,
+        ),
+        click.Option(
+            ["--oci-hostname", "_runtime_oci_hostname"],
+            envvar="OCI_HOSTNAME",
+            show_envvar=True,
+        ),
+        click.Option(
+            ["--oci-username", "_runtime_oci_username"],
+            envvar="OCI_USERNAME",
+            show_envvar=True,
+        ),
+        click.Option(
+            ["--oci-password", "_runtime_oci_password"],
+            envvar="OCI_PASSWORD",
+            show_envvar=True,
+        ),
+        click.Option(
+            ["--oauth2-bearer", "_runtime_oauth2_bearer"],
+            envvar="OAUTH2_BEARER",
+            show_envvar=True,
+        ),
+    ]
 
 
 def plugin_to_click_command(
@@ -270,24 +249,27 @@ def plugin_to_click_command(
 
     options_model = plugin.options_model
     params: list[Parameter] = [
-        field_to_click_option(field_name, field)
-        for field_name, field in options_model.model_fields.items()
+        *_runtime_click_parameters(),
+        *(
+            field_to_click_option(field_name, field)
+            for field_name, field in options_model.model_fields.items()
+        ),
     ]
 
     @click.pass_context
     def invoke_plugin(ctx: click.Context, /, **values: Any) -> None:
-        context = ctx.find_root().obj
-        if not isinstance(context, TranspilerContext):
-            raise click.ClickException(
-                "The top-level command did not initialize TranspilerContext"
-            )
+        source: str = values.pop("_runtime_source")
+        oci_hostname: str | None = values.pop("_runtime_oci_hostname")
+        oci_username: str | None = values.pop("_runtime_oci_username")
+        oci_password: str | None = values.pop("_runtime_oci_password")
+        oauth2_bearer: str | None = values.pop("_runtime_oauth2_bearer")
 
         model_values: dict[str, Any] = {}
 
         for field_name, field in options_model.model_fields.items():
-            source = ctx.get_parameter_source(field_name)
+            parameter_source = ctx.get_parameter_source(field_name)
 
-            if not field.is_required() and source is ParameterSource.DEFAULT:
+            if not field.is_required() and parameter_source is ParameterSource.DEFAULT:
                 continue
 
             model_values[field_name] = values[field_name]
@@ -303,6 +285,59 @@ def plugin_to_click_command(
                 _format_validation_error(exc),
                 ctx=ctx,
             ) from exc
+        logger.info(f"""
+━┏┛┏━┃┏━┃┏━ ┏━┛┏━┃┛┃  ┏━┛┏━┃  ┏┏ ┏━┃━┏┛┏━┛
+ ┃ ┏┏┛┏━┃┃ ┃━━┃┏━┛┃┃  ┏━┛┏┏┛  ┃┃┃┏━┃ ┃ ┏━┛
+ ┛ ┛ ┛┛ ┛┛ ┛━━┛┛  ┛━━┛━━┛┛ ┛  ┛┛┛┛ ┛ ┛ ━━┛
+
+ v{version("transpiler-mate-runtime")} by Terradue srl
+ info[at]terradue[dot]com
+""")
+
+        session = Session()
+
+        def mount_session(scheme: str, adapter: BaseAdapter) -> None:
+            logger.debug(f"Mounting '{scheme}' scheme to '{type(adapter).__name__}'...")
+            session.mount(scheme, adapter)
+            logger.debug(
+                f"Scheme '{scheme}' successfully mount to '{type(adapter).__name__}'"
+            )
+
+        http_adapter = (
+            BearerAuthHTTPAdapter(oauth2_bearer) if oauth2_bearer else HTTPAdapter()
+        )
+        mount_session("http://", http_adapter)
+        mount_session("https://", http_adapter)
+        mount_session("file://", FileAdapter())
+        mount_session(
+            "oci://",
+            OCIAdapter(
+                hostname=oci_hostname,
+                username=oci_username,
+                password=oci_password,
+            ),
+        )
+
+        content_path: Path | AnyUrl = (
+            AnyUrl(source)
+            if _is_url(path_or_url=source, session=session)
+            else Path(source).absolute()
+        )
+
+        cwl_document: Process | list[Process] = load_cwl_from_location(
+            path=source,
+            session=session,
+        )
+        metadata: SoftwareApplication = software_application_from_process(cwl_document)
+        context = TranspilerContext(
+            source=content_path,
+            metadata=metadata,
+            document=(
+                cwl_document
+                if isinstance(cwl_document, Process)
+                else tuple(cwl_document)
+            ),
+        )
 
         start_time = time.time()
         logger.info(
@@ -518,65 +553,5 @@ def _format_validation_error(exc: ValidationError) -> str:
 
 @click.group(cls=PluginGroup, name="transpiler-mate")
 @click.version_option(package_name="transpiler-mate-runtime")
-@click.argument("source", type=click.STRING, required=True)
-@click.option("--oci-hostname", envvar="OCI_HOSTNAME", show_envvar=True)
-@click.option("--oci-username", envvar="OCI_USERNAME", show_envvar=True)
-@click.option("--oci-password", envvar="OCI_PASSWORD", show_envvar=True)
-@click.option("--oauth2-bearer", envvar="OAUTH2_BEARER", show_envvar=True)
-@click.pass_context
-def main(
-    ctx: click.Context,
-    source: str,
-    oci_hostname: str | None,
-    oci_username: str | None,
-    oci_password: str | None,
-    oauth2_bearer: str | None,
-) -> None:
-    logger.info(f"""
-━┏┛┏━┃┏━┃┏━ ┏━┛┏━┃┛┃  ┏━┛┏━┃  ┏┏ ┏━┃━┏┛┏━┛
- ┃ ┏┏┛┏━┃┃ ┃━━┃┏━┛┃┃  ┏━┛┏┏┛  ┃┃┃┏━┃ ┃ ┏━┛
- ┛ ┛ ┛┛ ┛┛ ┛━━┛┛  ┛━━┛━━┛┛ ┛  ┛┛┛┛ ┛ ┛ ━━┛
-
- v{version("transpiler-mate-runtime")} by Terradue srl
- info[at]terradue[dot]com
-""")
-
-    session = Session()
-
-    def mount_session(scheme: str, adapter: BaseAdapter) -> None:
-        logger.debug(f"Mounting '{scheme}' scheme to '{type(adapter).__name__}'...")
-        session.mount(scheme, adapter)
-        logger.debug(
-            f"Scheme '{scheme}' successfully mount to '{type(adapter).__name__}'"
-        )
-
-    http_adapter = (
-        BearerAuthHTTPAdapter(oauth2_bearer) if oauth2_bearer else HTTPAdapter()
-    )
-    mount_session("http://", http_adapter)
-    mount_session("https://", http_adapter)
-    mount_session("file://", FileAdapter())
-    mount_session(
-        "oci://",
-        OCIAdapter(hostname=oci_hostname, username=oci_username, password=oci_password),
-    )
-
-    content_path: Path | AnyUrl = (
-        AnyUrl(source)
-        if _is_url(path_or_url=source, session=session)
-        else Path(source).absolute()
-    )
-
-    cwl_document: Process | list[Process] = load_cwl_from_location(
-        path=source, session=session
-    )
-
-    metadata: SoftwareApplication = software_application_from_process(cwl_document)
-
-    ctx.obj = TranspilerContext(
-        source=content_path,
-        metadata=metadata,
-        document=cwl_document
-        if isinstance(cwl_document, Process)
-        else tuple(cwl_document),
-    )
+def main() -> None:
+    """Discover and invoke installed transpiler-mate plugins."""
