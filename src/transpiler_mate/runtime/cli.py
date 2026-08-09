@@ -31,6 +31,7 @@ import types
 from collections.abc import Sequence
 from datetime import datetime
 from enum import Enum
+from importlib.metadata import version
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Literal, Union, get_args, get_origin
 
@@ -531,6 +532,13 @@ def main(
     oci_password: str | None,
     oauth2_bearer: str | None,
 ) -> None:
+    logger.info(f"""━┏┛┏━┃┏━┃┏━ ┏━┛┏━┃┛┃  ┏━┛┏━┃  ┏┏ ┏━┃━┏┛┏━┛
+ ┃ ┏┏┛┏━┃┃ ┃━━┃┏━┛┃┃  ┏━┛┏┏┛  ┃┃┃┏━┃ ┃ ┏━┛
+ ┛ ┛ ┛┛ ┛┛ ┛━━┛┛  ┛━━┛━━┛┛ ┛  ┛┛┛┛ ┛ ┛ ━━┛
+
+ v{version("transpiler-mate-runtime")} by Terradue srl
+ info[at]terradue[dot]com
+""")
 
     session = Session()
 
