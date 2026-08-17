@@ -21,17 +21,20 @@ from cwl_utils.parser import Process
 from loguru import logger
 from pydantic import AnyUrl
 from requests import Session
-from requests.adapters import HTTPAdapter
+from requests.adapters import BaseAdapter, HTTPAdapter
 from session_adapters.bearer_auth_http_adapter import BearerAuthHTTPAdapter
 from session_adapters.file_adapter import FileAdapter
 from session_adapters.oci_adapter import OCIAdapter
-from transpiler_mate.api import TranspilerContextResolver
+from transpiler_mate.api import (
+    PluginExecutionError,
+    PluginFailureError,
+    TranspilerContextResolver,
+)
 from transpiler_mate.api.plugin import TranspilerContext
 
 from .software_application_extractor import software_application_from_process
 
 if TYPE_CHECKING:
-    from requests.adapters import BaseAdapter
     from transpiler_mate.api import SoftwareApplication
 
 
@@ -61,7 +64,6 @@ class DefaultTranspilerContextResolver(TranspilerContextResolver):
             ),
         )
 
-
     def _mount_session(self, scheme: str, adapter: BaseAdapter) -> None:
         logger.debug(f"Mounting '{scheme}' scheme to '{type(adapter).__name__}'...")
         self._session.mount(scheme, adapter)
@@ -69,36 +71,11 @@ class DefaultTranspilerContextResolver(TranspilerContextResolver):
             f"Scheme '{scheme}' successfully mount to '{type(adapter).__name__}'"
         )
 
-
     def resolve(self, location: str) -> TranspilerContext:
         location, separator, process_id = location.partition("#")
 
         if separator and not process_id:
-            raise ValueError(f"Empty process id in location '{location}'")
-
-        cwl_document: list[Process] | Process = load_cwl_from_location(
-            path=location, session=self._session
-        )
-
-        if process_id:
-            resolved_process = search_process(process_id=process_id, process=cwl_document)
-            if resolved_process is None:
-                raise ValueError(
-                    f"Process {process_id} does not exist in {location}, "
-                    f"only {get_ids(cwl_document)} available."
-                )
-        elif isinstance(cwl_document, list):
-            raise ValueError(
-                f"Process list found from {location}, but no process id "
-                f"was provided via '{location}#<process-id>'; "
-                f"{get_ids(cwl_document)} available."
-            )
-        else:
-            resolved_process = cwl_document
-
-        logger.debug(
-            f"Selected '{resolved_process.class_}' Process '{resolved_process.id}' from {location}"
-        )
+            raise PluginExecutionError(f"Empty process id in location '{location}'")
 
         source: Path | AnyUrl = (
             AnyUrl(location)
@@ -106,7 +83,41 @@ class DefaultTranspilerContextResolver(TranspilerContextResolver):
             else Path(location).absolute()
         )
 
-        metadata: SoftwareApplication = software_application_from_process(cwl_document)
+        try:
+            cwl_document: list[Process] | Process = load_cwl_from_location(
+                path=location, session=self._session
+            )
+
+            metadata: SoftwareApplication = software_application_from_process(cwl_document)
+        except Exception as exc:
+            raise PluginFailureError(
+                f"Impossible to load a CWL document from {location}"
+            ) from exc
+
+        resolved_process: Process | None = None
+
+        if process_id:
+            resolved_process = search_process(
+                process_id=process_id, process=cwl_document
+            )
+            if resolved_process is None:
+                raise PluginFailureError(
+                    f"Process {process_id} does not exist in {location}, "
+                    f"only {get_ids(cwl_document)} available."
+                )
+        elif isinstance(cwl_document, list):
+            logger.warning(
+                f"Process list found from {location}, but no process id "
+                f"was provided via '{location}#<process-id>'; "
+                f"{get_ids(cwl_document)} available."
+            )
+        else:
+            resolved_process = cwl_document
+
+        if resolved_process:
+            logger.debug(
+                f"Selected '{resolved_process.class_}' Process '{resolved_process.id}' from {location}"
+            )
 
         return TranspilerContext(
             source=source,

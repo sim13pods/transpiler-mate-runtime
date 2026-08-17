@@ -36,15 +36,8 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, Union, get_args, get_
 
 import click
 from click.core import ParameterSource
-from cwl_loader import _is_url, load_cwl_from_location
-from cwl_utils.parser import Process
 from loguru import logger
-from pydantic import AnyUrl, TypeAdapter, ValidationError
-from requests import Session
-from requests.adapters import HTTPAdapter
-from session_adapters.bearer_auth_http_adapter import BearerAuthHTTPAdapter
-from session_adapters.file_adapter import FileAdapter
-from session_adapters.oci_adapter import OCIAdapter
+from pydantic import TypeAdapter, ValidationError
 from transpiler_mate.api import (
     PluginError,
     PluginExecutionError,
@@ -52,19 +45,18 @@ from transpiler_mate.api import (
     TranspilerContext,
 )
 
+from .context_resolver import DefaultTranspilerContextResolver
 from .plugin_loader import (
     PluginLoaderError,
     discover_plugins,
     load_plugin,
 )
-from .software_application_extractor import software_application_from_process
 
 if TYPE_CHECKING:
     from importlib.metadata import EntryPoint
 
     from click.core import Parameter
-    from requests.adapters import BaseAdapter
-    from transpiler_mate.api import SoftwareApplication, TranspilerPlugin
+    from transpiler_mate.api import TranspilerPlugin
 
 _EXECUTION_SEPARATOR = (
     "------------------------------------------------------------------------"
@@ -293,52 +285,6 @@ def plugin_to_click_command(
  v{version("transpiler-mate-runtime")} by Terradue srl
  info[at]terradue[dot]com
 """)
-
-        session = Session()
-
-        def mount_session(scheme: str, adapter: BaseAdapter) -> None:
-            logger.debug(f"Mounting '{scheme}' scheme to '{type(adapter).__name__}'...")
-            session.mount(scheme, adapter)
-            logger.debug(
-                f"Scheme '{scheme}' successfully mount to '{type(adapter).__name__}'"
-            )
-
-        http_adapter = (
-            BearerAuthHTTPAdapter(oauth2_bearer) if oauth2_bearer else HTTPAdapter()
-        )
-        mount_session("http://", http_adapter)
-        mount_session("https://", http_adapter)
-        mount_session("file://", FileAdapter())
-        mount_session(
-            "oci://",
-            OCIAdapter(
-                hostname=oci_hostname,
-                username=oci_username,
-                password=oci_password,
-            ),
-        )
-
-        content_path: Path | AnyUrl = (
-            AnyUrl(source)
-            if _is_url(path_or_url=source, session=session)
-            else Path(source).absolute()
-        )
-
-        cwl_document: Process | list[Process] = load_cwl_from_location(
-            path=source,
-            session=session,
-        )
-        metadata: SoftwareApplication = software_application_from_process(cwl_document)
-        context = TranspilerContext(
-            source=content_path,
-            metadata=metadata,
-            document=(
-                cwl_document
-                if isinstance(cwl_document, Process)
-                else tuple(cwl_document)
-            ),
-        )
-
         start_time = time.time()
         logger.info(
             "Started at: {}",
@@ -346,6 +292,13 @@ def plugin_to_click_command(
         )
 
         try:
+            context: TranspilerContext = DefaultTranspilerContextResolver(
+                oci_hostname=oci_hostname,
+                oci_username=oci_username,
+                oci_password=oci_password,
+                oauth2_bearer=oauth2_bearer,
+            ).resolve(location=source)
+
             plugin.execute(context, options)
         except PluginFailureError as exc:
             logger.error(_EXECUTION_SEPARATOR)

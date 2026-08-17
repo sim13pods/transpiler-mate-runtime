@@ -33,7 +33,7 @@ from transpiler_mate.api import (
     transpiler_plugin,
 )
 
-from transpiler_mate.runtime import cli
+from transpiler_mate.runtime import cli, context_resolver
 
 if TYPE_CHECKING:
     from transpiler_mate.api import TranspilerPlugin
@@ -97,14 +97,14 @@ def _runtime_context_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
         del document
         return metadata
 
-    monkeypatch.setattr(cli, "Session", FakeSession)
-    monkeypatch.setattr(cli, "HTTPAdapter", adapter)
-    monkeypatch.setattr(cli, "FileAdapter", adapter)
-    monkeypatch.setattr(cli, "OCIAdapter", oci_adapter)
-    monkeypatch.setattr(cli, "_is_url", is_url)
-    monkeypatch.setattr(cli, "load_cwl_from_location", load_document)
+    monkeypatch.setattr(context_resolver, "Session", FakeSession)
+    monkeypatch.setattr(context_resolver, "HTTPAdapter", adapter)
+    monkeypatch.setattr(context_resolver, "FileAdapter", adapter)
+    monkeypatch.setattr(context_resolver, "OCIAdapter", oci_adapter)
+    monkeypatch.setattr(context_resolver, "_is_url", is_url)
+    monkeypatch.setattr(context_resolver, "load_cwl_from_location", load_document)
     monkeypatch.setattr(
-        cli,
+        context_resolver,
         "software_application_from_process",
         extract_metadata,
     )
@@ -354,7 +354,7 @@ def test_plugin_help_does_not_initialize_transpiler_context(
     def unexpected_session() -> None:
         raise AssertionError("plugin callback must not execute for plugin help")
 
-    monkeypatch.setattr(cli, "Session", unexpected_session)
+    monkeypatch.setattr(context_resolver, "Session", unexpected_session)
 
     result = CliRunner().invoke(
         cli.main,
@@ -402,14 +402,14 @@ def test_plugin_builds_context_and_passes_it_to_plugin(
         del document
         return metadata
 
-    monkeypatch.setattr(cli, "Session", FakeSession)
-    monkeypatch.setattr(cli, "HTTPAdapter", adapter)
-    monkeypatch.setattr(cli, "FileAdapter", adapter)
-    monkeypatch.setattr(cli, "OCIAdapter", oci_adapter)
-    monkeypatch.setattr(cli, "_is_url", is_url)
-    monkeypatch.setattr(cli, "load_cwl_from_location", load_document)
+    monkeypatch.setattr(context_resolver, "Session", FakeSession)
+    monkeypatch.setattr(context_resolver, "HTTPAdapter", adapter)
+    monkeypatch.setattr(context_resolver, "FileAdapter", adapter)
+    monkeypatch.setattr(context_resolver, "OCIAdapter", oci_adapter)
+    monkeypatch.setattr(context_resolver, "_is_url", is_url)
+    monkeypatch.setattr(context_resolver, "load_cwl_from_location", load_document)
     monkeypatch.setattr(
-        cli,
+        context_resolver,
         "software_application_from_process",
         extract_metadata,
     )
