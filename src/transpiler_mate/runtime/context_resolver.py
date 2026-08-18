@@ -77,10 +77,10 @@ class DefaultTranspilerContextResolver(TranspilerContextResolver):
         if separator and not process_id:
             raise PluginExecutionError(f"Empty process id in location '{location}'")
 
-        source: Path | AnyUrl = (
+        source: AnyUrl = (
             AnyUrl(location)
             if _is_url(path_or_url=location, session=self._session)
-            else Path(location).absolute()
+            else AnyUrl(Path(location).absolute().as_uri())
         )
 
         try:
