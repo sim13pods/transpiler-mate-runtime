@@ -88,7 +88,9 @@ class DefaultTranspilerContextResolver(TranspilerContextResolver):
                 path=location, session=self._session
             )
 
-            metadata: SoftwareApplication = software_application_from_process(cwl_document)
+            metadata: SoftwareApplication = software_application_from_process(
+                cwl_document
+            )
         except Exception as exc:
             raise PluginFailureError(
                 f"Impossible to load a CWL document from {location}"
